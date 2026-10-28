@@ -78,6 +78,7 @@ static void OnNegotiationInit(IHS_SessionChannel *channel, const CNegotiationIni
     IHS_SessionConfig ihsConf = {
             .enableAudio = true,
             .enableHevc = false,
+            .maxFramerate = 0,
     };
 
     IHS_Session *session = channel->session;
@@ -154,8 +155,13 @@ static void OnNegotiationInit(IHS_SessionChannel *channel, const CNegotiationIni
         PROTOBUF_C_SET_VALUE(clientConfig, enable_microphone_streaming, true);
     }
     PROTOBUF_C_SET_VALUE(clientConfig, enable_video_streaming, true);
-    PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_numerator, 5994);
-    PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_denominator, 100);
+    if (ihsConf.maxFramerate > 0) {
+        PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_numerator, ihsConf.maxFramerate);
+        PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_denominator, 1);
+    } else {
+        PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_numerator, 5994);
+        PROTOBUF_C_SET_VALUE(clientConfig, maximum_framerate_denominator, 100);
+    }
     PROTOBUF_C_SET_VALUE(clientConfig, quality, k_EStreamQualityBalanced);
     PROTOBUF_C_SET_VALUE(clientConfig, maximum_bitrate_kbps, 30000);
     if (ihsConf.enableHevc) {

@@ -43,6 +43,11 @@ typedef struct IHS_SessionInfo {
 typedef struct IHS_SessionConfig {
     bool enableAudio;
     bool enableHevc;
+    /**
+     * Highest frame rate the host should stream at (CStreamingClientConfig.maximum_framerate), in frames per second;
+     * 0 asks for the default 59.94.
+     */
+    uint32_t maxFramerate;
 } IHS_SessionConfig;
 
 typedef struct IHS_StreamSessionCallbacks {
