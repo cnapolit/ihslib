@@ -29,6 +29,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <errno.h>
+#include <string.h>
 
 #include "endianness.h"
 #include "crypto.h"
@@ -142,6 +144,10 @@ bool IHS_BaseStartWorker(IHS_Base *base, const char *name) {
         IHS_BaseUnlock(base);
         return false;
     }
+    // Opened here rather than on the worker, and closed only once the worker is joined: other threads send on it
+    // (the timer, the caller) as soon as this returns, and a socket the worker had not opened yet dropped their
+    // first sends, such as a one-off unicast discovery.
+    base->socket = IHS_UDPSocketOpen(base->broadcast);
     base->worker = IHS_ThreadCreate((IHS_ThreadFunction *) BaseWorker, name, base);
     IHS_BaseLog(base, IHS_LogLevelInfo, "Worker", "Worker thread %s created", name);
     IHS_BaseUnlock(base);
@@ -163,6 +169,15 @@ void IHS_BaseWaitWorker(IHS_Base *base) {
     assert(base != NULL);
     IHS_ThreadJoin(base->worker);
     base->worker = NULL;
+    // Clear base->socket under the lock so any concurrent IHS_BaseSend that takes the lock after this point sees
+    // NULL and bails, then close it once no in-flight send can still reference it.
+    IHS_BaseLock(base);
+    IHS_UDPSocket *socket = base->socket;
+    base->socket = NULL;
+    IHS_BaseUnlock(base);
+    if (socket != NULL) {
+        IHS_UDPSocketClose(socket);
+    }
 }
 
 void IHS_BaseDestroy(IHS_Base *base) {
@@ -172,10 +187,9 @@ void IHS_BaseDestroy(IHS_Base *base) {
 
 bool IHS_BaseSend(IHS_Base *base, IHS_SocketAddress address, const IHS_Buffer *data) {
     assert(base != NULL);
-    // Hold base->lock across the send so the worker thread's close-on-shutdown can't
-    // free the socket out from under us. The worker sets socket = NULL under the same
-    // lock before calling IHS_UDPSocketClose, so any send that completes here uses a
-    // socket the worker has agreed to keep alive.
+    // Hold base->lock across the send so IHS_BaseWaitWorker's close can't free the
+    // socket out from under us. It sets socket = NULL under the same lock before
+    // calling IHS_UDPSocketClose, so any send that completes here uses a live socket.
     IHS_BaseLock(base);
     bool ret = false;
     if (base->socket != NULL) {
@@ -198,10 +212,9 @@ void IHS_BaseUnlock(IHS_Base *base) {
 
 static void BaseWorker(IHS_Base *base) {
     assert(base != NULL);
-    IHS_UDPSocket *socket = IHS_UDPSocketOpen(base->broadcast);
-    IHS_BaseLock(base);
-    base->socket = socket;
-    IHS_BaseUnlock(base);
+    // Opened by IHS_BaseStartWorker before this thread was created, and closed by IHS_BaseWaitWorker after it is
+    // joined, so it stays the same for the worker's whole life.
+    IHS_UDPSocket *socket = base->socket;
     if (base->callbacks.run && base->callbacks.run->initialized) {
         base->callbacks.run->initialized(base, base->callbackContexts.run);
     }
@@ -210,6 +223,7 @@ static void BaseWorker(IHS_Base *base) {
     while (!base->interrupted) {
         int ret;
         if ((ret = IHS_UDPSocketReceive(socket, &recv)) < 0) {
+            IHS_BaseLog(base, IHS_LogLevelError, "Worker", "Receiving failed, worker stops: %s", strerror(errno));
             break;
         }
         if (ret) {
@@ -221,13 +235,5 @@ static void BaseWorker(IHS_Base *base) {
     if (base->callbacks.run && base->callbacks.run->finalized) {
         base->callbacks.run->finalized(base, base->callbackContexts.run);
     }
-    // Clear base->socket under the lock so any concurrent IHS_BaseSend that takes
-    // the lock after this point sees NULL and bails. Then close the socket after
-    // releasing the lock — at that point no in-flight send can still reference it
-    // (each send takes the lock for its full duration).
-    IHS_BaseLock(base);
-    base->socket = NULL;
-    IHS_BaseUnlock(base);
-    IHS_UDPSocketClose(socket);
 }
 

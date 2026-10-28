@@ -72,7 +72,8 @@ int IHS_UDPSocketReceive(IHS_UDPSocket *s, IHS_UDPPacket *packet) {
     IHS_BufferEnsureMaxSize(&packet->buffer, 2048);
     if ((len = recvfrom(s->fd, IHS_BufferPointer(&packet->buffer), IHS_BufferMaxSize(&packet->buffer),
                         0, (struct sockaddr *) &sender, &senderlen)) <= 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT) {
+        // An empty datagram leaves errno as it was, so it is not an error; nor is a signal arriving mid-wait.
+        if (len == 0 || errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT || errno == EINTR) {
             return 0;
         }
         return -1;
