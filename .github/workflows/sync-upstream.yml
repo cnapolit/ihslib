@@ -1,0 +1,60 @@
+name: Sync with upstream
+
+# This fork carries Satelight's changes as commits on the satelight branch, which Satelight's webOS native app takes as
+# a submodule. Weekly, this brings the fork's copy of upstream's branch up to date and rebases satelight onto upstream
+# (its master branch). Commits upstream has since taken become empty and are dropped. A rebase that conflicts fails
+# this run and leaves satelight as it was. Satelight's own bump workflow then moves its submodule here once its build
+# and tests pass, later on Mondays.
+#
+# Upstream's commits can change its workflow files, which GITHUB_TOKEN may not push: the FORK_SYNC_TOKEN secret is a
+# fine-grained token with Contents and Workflows write access to this repository.
+
+on:
+  schedule:
+    - cron: '7 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: mariotaku/ihslib
+  UPSTREAM_BRANCH: master
+  # What satelight is rebased onto: `branch` (UPSTREAM_BRANCH's head) or `release` (upstream's latest release).
+  BASE: branch
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: satelight
+          fetch-depth: 0
+          token: ${{ secrets.FORK_SYNC_TOKEN || github.token }}
+      - name: Sync upstream's branch
+        run: |
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch --quiet --tags upstream "$UPSTREAM_BRANCH"
+          git push origin "refs/remotes/upstream/$UPSTREAM_BRANCH:refs/heads/$UPSTREAM_BRANCH"
+      - name: Rebase satelight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$BASE" = release ]; then
+            base=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          else
+            base=upstream/$UPSTREAM_BRANCH
+          fi
+          if git merge-base --is-ancestor "$base" HEAD; then
+            echo "satelight is already on $base." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          old=$(git rev-parse HEAD)
+          git rebase --empty=drop "$base"
+          # Satelight's submodule may still point at the old commits until its bump passes: keep them reachable.
+          git push origin "$old:refs/tags/satelight-${old:0:12}"
+          git push --force-with-lease="satelight:$old" origin HEAD:satelight
+          { echo "Rebased satelight onto $base:"; echo; git log --format='- %s' "$base..HEAD"; } >> "$GITHUB_STEP_SUMMARY"
