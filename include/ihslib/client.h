@@ -88,6 +88,10 @@ typedef struct IHS_StreamingRequest {
     } maxResolution;
     int32_t audioChannelCount;
     IHS_StreamInterface streamingInterface;
+    /**
+     * Steam game to start on the host (for a regular Steam app, its app id). 0 streams the host as it is.
+     */
+    uint64_t gameId;
 } IHS_StreamingRequest;
 
 typedef struct IHS_ClientDiscoveryCallbacks {
@@ -162,6 +166,15 @@ const char *IHS_ClientError(IHS_Client *client);
 bool IHS_ClientStartDiscovery(IHS_Client *client, uint32_t interval);
 
 bool IHS_ClientStopDiscovery(IHS_Client *client);
+
+/**
+ * Sends one discovery request straight to an address rather than broadcasting it, for hosts that broadcasts
+ * do not reach. A host that answers is reported through the discovery callbacks as usual.
+ * @param client Client instance
+ * @param address Host address; port 0 means the default discovery port
+ * @return
+ */
+bool IHS_ClientDiscoverAddress(IHS_Client *client, const IHS_SocketAddress *address);
 
 /* ----------------------------------------------------
  * - Authorization functions

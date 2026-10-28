@@ -94,6 +94,16 @@ static void DiscoveryTimerEnd(IHS_Client *client) {
     IHS_BaseUnlock(&client->base);
 }
 
+bool IHS_ClientDiscoverAddress(IHS_Client *client, const IHS_SocketAddress *address) {
+    CMsgRemoteClientBroadcastDiscovery discovery = CMSG_REMOTE_CLIENT_BROADCAST_DISCOVERY__INIT;
+    PROTOBUF_C_SET_VALUE(discovery, seq_num, client->discoverySeq++);
+    IHS_SocketAddress target = *address;
+    if (target.port == 0) {
+        target.port = 27036;
+    }
+    return IHS_ClientSend(client, target, k_ERemoteClientBroadcastMsgDiscovery, (ProtobufCMessage *) &discovery);
+}
+
 static bool DiscoveryBroadcast(IHS_Client *client) {
     CMsgRemoteClientBroadcastDiscovery discovery = CMSG_REMOTE_CLIENT_BROADCAST_DISCOVERY__INIT;
     PROTOBUF_C_SET_VALUE(discovery, seq_num, client->discoverySeq++);

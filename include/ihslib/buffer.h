@@ -62,3 +62,10 @@ void IHS_BufferReadMem(const IHS_Buffer *buffer, size_t position, uint8_t *dest,
  * @param buffer Buffer to release ownership
  */
 void IHS_BufferReleaseOwnership(IHS_Buffer *buffer);
+
+/**
+ * Writes bytes at a position, growing the buffer as needed. For HID devices implemented outside the library.
+ */
+size_t IHS_BufferWriteMem(IHS_Buffer *buffer, size_t position, const uint8_t *src, size_t srcLen);
+
+size_t IHS_BufferFillMem(IHS_Buffer *buffer, size_t position, uint8_t fill, size_t fillLen);

@@ -30,6 +30,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 typedef struct IHS_AuthorizationState {
     IHS_Client *client;
@@ -112,12 +113,18 @@ void IHS_ClientAuthorizationCallback(IHS_Client *client, const IHS_SocketAddress
                 client->callbacks.authorization->progress(client, &state->host, client->callbackContexts.authorization);
             }
             return;
-        case k_ERemoteDeviceAuthorizationSuccess:
+        case k_ERemoteDeviceAuthorizationSuccess: {
+            /* Steam Link devices confirm a successful pairing */
+            CMsgRemoteDeviceAuthorizationConfirmed confirmed = CMSG_REMOTE_DEVICE_AUTHORIZATION_CONFIRMED__INIT;
+            confirmed.result = k_ERemoteDeviceAuthorizationSuccess;
+            IHS_ClientSend(client, state->host.address, k_ERemoteDeviceAuthorizationConfirmed,
+                           (ProtobufCMessage *) &confirmed);
             if (client->callbacks.authorization && client->callbacks.authorization->success) {
                 client->callbacks.authorization->success(client, &state->host, resp->steamid,
                                                          client->callbackContexts.authorization);
             }
             break;
+        }
         default:
             if (client->callbacks.authorization && client->callbacks.authorization->failed) {
                 client->callbacks.authorization->failed(client, &state->host, (IHS_AuthorizationResult) resp->result,
@@ -209,6 +216,10 @@ static void AuthorizationConfigureTicket(IHS_Client *client, IHS_AuthorizationSt
 
     ticket->has_usage = true;
     ticket->usage = k_EKeyEscrowUsageStreamingDevice;
+
+    /* When the ticket was made, as Steam Link devices send it */
+    ticket->has_timestamp = true;
+    ticket->timestamp = (uint32_t) time(NULL);
 
     ticket->device_name = client->base.deviceName;
 }

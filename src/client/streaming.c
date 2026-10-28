@@ -206,6 +206,9 @@ static uint64_t StreamingRequestTimer(int runCount, void *context) {
     message.has_form_factor = true;
     message.form_factor = k_EStreamDeviceFormFactorTV;
 
+    message.has_gameid = request.gameId != 0;
+    message.gameid = request.gameId;
+
     message.has_device_token = true;
     message.device_token.data = client->base.deviceToken;
     message.device_token.len = sizeof(client->base.deviceToken);
