@@ -60,14 +60,11 @@ void IHS_HIDReportHolderDeinit(IHS_HIDReportHolder *holder) {
     free(holder->pendingCurrent);
 }
 
-// Capture `current` as the pending state for the next send and decide whether to skip
-// because the bytes are byte-identical to what was last flushed. Allocates the two scratch
-// buffers lazily and grows them on demand. Returns true if the caller should drop.
-static bool DedupAndStash(IHS_HIDReportHolder *holder, const uint8_t *current, size_t len) {
-    if (holder->lastSent != NULL && holder->lastSentLen == len &&
-        memcmp(holder->lastSent, current, len) == 0) {
-        return true;
-    }
+// Capture `current` as the pending state for the next send, allocating the two scratch buffers lazily and
+// growing them on demand. Nothing is dropped here: a full report answers the host's request for one even when the
+// state did not change (dropping it leaves the host waiting and ignoring every delta after), and a delta is a link
+// in a chain the caller anchors to its own previous state, so dropping one breaks every later delta.
+static void Stash(IHS_HIDReportHolder *holder, const uint8_t *current, size_t len) {
     if (len > holder->bufferCapacity) {
         holder->lastSent = realloc(holder->lastSent, len);
         holder->pendingCurrent = realloc(holder->pendingCurrent, len);
@@ -75,7 +72,6 @@ static bool DedupAndStash(IHS_HIDReportHolder *holder, const uint8_t *current, s
     }
     memcpy(holder->pendingCurrent, current, len);
     holder->pendingCurrentLen = len;
-    return false;
 }
 
 void IHS_HIDReportHolderSetReportLength(IHS_HIDReportHolder *holder, size_t reportLen) {
@@ -84,9 +80,7 @@ void IHS_HIDReportHolderSetReportLength(IHS_HIDReportHolder *holder, size_t repo
 
 void IHS_HIDReportHolderAddFull(IHS_HIDReportHolder *holder, const uint8_t *current, size_t len) {
     assert(holder->reportLength >= len);
-    if (DedupAndStash(holder, current, len)) {
-        return;
-    }
+    Stash(holder, current, len);
     uint8_t *data = IHS_BufferPointerForAppend(&holder->dataBuffer, len);
     memcpy(data, current, len);
     holder->dataBuffer.size += len;
@@ -103,9 +97,7 @@ void IHS_HIDReportHolderAddFull(IHS_HIDReportHolder *holder, const uint8_t *curr
 
 void IHS_HIDReportHolderAddDelta(IHS_HIDReportHolder *holder, const uint8_t *previous, const uint8_t *current,
                                  size_t len) {
-    if (DedupAndStash(holder, current, len)) {
-        return;
-    }
+    Stash(holder, current, len);
     uint8_t *data = IHS_BufferPointerForAppend(&holder->dataBuffer, holder->reportLength);
     int deltaLen = ComputeDelta(previous, current, len, holder->reportLength, data);
     holder->dataBuffer.size += deltaLen;
